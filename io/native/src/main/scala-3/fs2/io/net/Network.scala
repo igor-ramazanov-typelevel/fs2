@@ -20,19 +20,17 @@
  */
 
 package fs2
+package io
+package net
 
-import scala.scalanative.libc.string._
-import scala.scalanative.unsafe._
-import scala.scalanative.unsigned._
+import fs2.io.net.tls.TLSContext
 
-private[fs2] trait ChunkRuntimePlatform[+O]
+sealed trait Network[F[_]] extends NetworkPlatform[F] with SocketGroup[F] {
+  def tlsContext: TLSContext.Builder[F]
+}
 
-private[fs2] trait ChunkCompanionRuntimePlatform {
+object Network extends NetworkCompanionPlatform {
+  private[fs2] trait UnsealedNetwork[F[_]] extends Network[F]
 
-  def fromBytePtr(ptr: Ptr[Byte], length: Int): Chunk[Byte] = {
-    val bytes = new Array[Byte](length)
-    memcpy(bytes.atUnsafe(0), ptr, length.toCSize)
-    Chunk.ArraySlice(bytes, 0, length)
-  }
-
+  def apply[F[_]](implicit F: Network[F]): F.type = F
 }

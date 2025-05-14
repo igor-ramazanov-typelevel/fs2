@@ -19,20 +19,40 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-package fs2
+package fs2.io.net.tls
 
-import scala.scalanative.libc.string._
+import cats.effect.kernel.Resource
+import cats.effect.kernel.Sync
+import scodec.bits.ByteVector
+
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 
-private[fs2] trait ChunkRuntimePlatform[+O]
+import s2n._
+import s2nutil._
 
-private[fs2] trait ChunkCompanionRuntimePlatform {
+final class CertChainAndKey private (chainPem: ByteVector, privateKeyPem: ByteVector) {
+  private[tls] def toS2n[F[_]](implicit F: Sync[F]): Resource[F, Ptr[s2n_cert_chain_and_key]] =
+    Resource
+      .make(F.delay(guard(s2n_cert_chain_and_key_new())))(ccak =>
+        F.delay(guard_(s2n_cert_chain_and_key_free(ccak)))
+      )
+      .evalTap { certChainAndKey =>
+        F.delay {
+          guard_ {
+            s2n_cert_chain_and_key_load_pem_bytes(
+              certChainAndKey,
+              chainPem.toArray.atUnsafe(0),
+              chainPem.length.toUInt,
+              privateKeyPem.toArray.atUnsafe(0),
+              privateKeyPem.length.toUInt
+            )
+          }
+        }
+      }
+}
 
-  def fromBytePtr(ptr: Ptr[Byte], length: Int): Chunk[Byte] = {
-    val bytes = new Array[Byte](length)
-    memcpy(bytes.atUnsafe(0), ptr, length.toCSize)
-    Chunk.ArraySlice(bytes, 0, length)
-  }
-
+object CertChainAndKey {
+  def apply(chainPem: ByteVector, privateKeyPem: ByteVector): CertChainAndKey =
+    new CertChainAndKey(chainPem, privateKeyPem)
 }

@@ -1,8 +1,37 @@
 import com.typesafe.tools.mima.core._
+import org.typelevel.sbt.gha.WorkflowStep.Run
+import org.typelevel.sbt.gha.WorkflowStep.Sbt
 
 Global / onChangedBuildSource := ReloadOnSourceChanges
 
-ThisBuild / tlBaseVersion := "3.12"
+ThisBuild / tlBaseVersion := "3.13"
+ThisBuild / githubOwner := "igor-ramazanov-typelevel"
+ThisBuild / githubRepository := "fs2"
+
+ThisBuild / githubWorkflowPublishPreamble := List.empty
+ThisBuild / githubWorkflowUseSbtThinClient := true
+ThisBuild / githubWorkflowPublish := List(
+  Run(
+    commands = List("echo \"$PGP_SECRET\" | gpg --import"),
+    id = None,
+    name = Some("Import PGP key"),
+    env = Map("PGP_SECRET" -> "${{ secrets.PGP_SECRET }}"),
+    params = Map(),
+    timeoutMinutes = None,
+    workingDirectory = None
+  ),
+  Sbt(
+    commands = List("+ publish"),
+    id = None,
+    name = Some("Publish"),
+    cond = None,
+    env = Map("GITHUB_TOKEN" -> "${{ secrets.GB_TOKEN }}"),
+    params = Map.empty,
+    timeoutMinutes = None,
+    preamble = true
+  )
+)
+ThisBuild / gpgWarnOnFailure := false
 
 ThisBuild / organization := "co.fs2"
 ThisBuild / organizationName := "Functional Streams for Scala"
@@ -11,11 +40,11 @@ ThisBuild / startYear := Some(2013)
 val Scala213 = "2.13.16"
 
 ThisBuild / scalaVersion := Scala213
-ThisBuild / crossScalaVersions := Seq("2.12.20", Scala213, "3.3.6")
+ThisBuild / crossScalaVersions := Seq(Scala213, "3.3.6")
 ThisBuild / tlVersionIntroduced := Map("3" -> "3.0.3")
 
 ThisBuild / githubWorkflowOSes := Seq("ubuntu-latest")
-ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"), JavaSpec.temurin("21"))
+ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("21"))
 ThisBuild / githubWorkflowBuildPreamble ++= nativeBrewInstallWorkflowSteps.value
 ThisBuild / nativeBrewInstallCond := Some("matrix.project == 'rootNative'")
 
@@ -26,23 +55,6 @@ ThisBuild / githubWorkflowBuild ++= Seq(
     cond = Some(s"matrix.scala == '2.13' && matrix.project == 'rootJVM'")
   )
 )
-
-ThisBuild / githubWorkflowAddedJobs +=
-  WorkflowJob(
-    "macos",
-    "Test I/O on macOS",
-    scalas = Nil,
-    sbtStepPreamble = Nil,
-    javas = List(githubWorkflowJavaVersions.value.head),
-    oses = List("macos-latest"),
-    matrixAdds = Map("project" -> List("ioJS", "ioJVM", "ioNative")),
-    steps = githubWorkflowJobSetup.value.toList ++ List(
-      WorkflowStep.Run(List("brew install s2n"), cond = Some("matrix.project == 'ioNative'")),
-      WorkflowStep.Sbt(List("${{ matrix.project }}/test"))
-    )
-  )
-
-ThisBuild / githubWorkflowPublishNeeds += "macos"
 
 ThisBuild / licenses := List(("MIT", url("http://opensource.org/licenses/MIT")))
 
@@ -281,14 +293,11 @@ lazy val root = tlCrossRootProject
     io,
     scodec,
     protocols,
-    reactiveStreams,
-    integration,
-    unidocs,
-    benchmark
+    reactiveStreams
   )
 
 lazy val commonNativeSettings = Seq[Setting[?]](
-  tlVersionIntroduced := List("2.12", "2.13", "3").map(_ -> "3.2.15").toMap,
+  tlVersionIntroduced := List("2.13", "3").map(_ -> "3.2.15").toMap,
   Test / nativeBrewFormulas += "openssl"
 )
 
@@ -297,19 +306,22 @@ lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform)
   .settings(
     name := "fs2-core",
     libraryDependencies ++= Seq(
-      "org.scodec" %%% "scodec-bits" % "1.1.38",
-      "org.typelevel" %%% "cats-core" % "2.11.0",
-      "org.typelevel" %%% "cats-effect" % "3.6.1",
-      "org.typelevel" %%% "cats-effect-laws" % "3.6.1" % Test,
-      "org.typelevel" %%% "cats-effect-testkit" % "3.6.1" % Test,
-      "org.typelevel" %%% "cats-laws" % "2.11.0" % Test,
-      "org.typelevel" %%% "discipline-munit" % "2.0.0-M3" % Test,
-      "org.typelevel" %%% "munit-cats-effect" % "2.1.0" % Test,
-      "org.typelevel" %%% "scalacheck-effect-munit" % "2.0.0-M2" % Test
+      "org.scodec" %%% "scodec-bits" % "1.2.1",
+      "org.typelevel" %%% "cats-core" % "2.13.0",
+      "org.typelevel" %%% "cats-effect" % "3.7-4972921",
+      "org.typelevel" %%% "cats-effect-laws" % "3.7-4972921" % Test,
+      "org.typelevel" %%% "cats-effect-testkit" % "3.7-4972921" % Test,
+      "org.typelevel" %%% "cats-laws" % "2.13.0" % Test,
+      "org.typelevel" %%% "discipline-munit" % "2.0.0" % Test,
+      "org.typelevel" %%% "munit-cats-effect" % "2.2.0-M1" % Test,
+      "org.typelevel" %%% "scalacheck-effect-munit" % "2.1.0-M1" % Test
     ),
     tlJdkRelease := None,
     Compile / doc / scalacOptions ++= (if (scalaVersion.value.startsWith("2.")) Seq("-nowarn")
-                                       else Nil)
+                                       else Nil),
+    publishTo := githubPublishTo.value,
+    publishConfiguration := publishConfiguration.value.withOverwrite(true),
+    publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(true)
   )
 
 lazy val coreJVM = core.jvm
@@ -335,26 +347,16 @@ lazy val coreNative = core.native
   .disablePlugins(DoctestPlugin)
   .settings(commonNativeSettings)
 
-lazy val integration = project
-  .in(file("integration"))
-  .settings(
-    fork := true,
-    javaOptions += "-Dcats.effect.tracing.mode=none",
-    libraryDependencies ++= Seq(
-      "org.typelevel" %%% "munit-cats-effect" % "2.1.0" % Test
-    )
-  )
-  .enablePlugins(NoPublishPlugin)
-  .disablePlugins(DoctestPlugin)
-  .dependsOn(coreJVM)
-
 lazy val io = crossProject(JVMPlatform, JSPlatform, NativePlatform)
   .in(file("io"))
   .settings(
     name := "fs2-io",
     tlVersionIntroduced ~= { _.updated("3", "3.1.0") },
-    libraryDependencies += "com.comcast" %%% "ip4s-core" % "3.6.0",
-    tlJdkRelease := None
+    libraryDependencies += "com.comcast" %%% "ip4s-core" % "3.8.0-M1",
+    tlJdkRelease := None,
+    publishTo := githubPublishTo.value,
+    publishConfiguration := publishConfiguration.value.withOverwrite(true),
+    publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(true)
   )
   .jvmSettings(
     Test / fork := true,
@@ -364,7 +366,7 @@ lazy val io = crossProject(JVMPlatform, JSPlatform, NativePlatform)
     )
   )
   .jsSettings(
-    tlVersionIntroduced := List("2.12", "2.13", "3").map(_ -> "3.1.0").toMap,
+    tlVersionIntroduced := List("2.13", "3").map(_ -> "3.1.0").toMap,
     scalaJSLinkerConfig ~= (_.withModuleKind(ModuleKind.CommonJSModule))
   )
   .nativeEnablePlugins(ScalaNativeBrewedConfigPlugin)
@@ -432,10 +434,13 @@ lazy val scodec = crossProject(JVMPlatform, JSPlatform, NativePlatform)
     libraryDependencies += "org.scodec" %%% "scodec-core" % (if (
                                                                scalaVersion.value.startsWith("2.")
                                                              )
-                                                               "1.11.10"
-                                                             else "2.2.1"),
-    tlVersionIntroduced := List("2.12", "2.13", "3").map(_ -> "3.2.0").toMap,
-    tlJdkRelease := Some(8)
+                                                               "1.11.11"
+                                                             else "2.3.2"),
+    tlVersionIntroduced := List("2.13", "3").map(_ -> "3.2.0").toMap,
+    tlJdkRelease := Some(8),
+    publishTo := githubPublishTo.value,
+    publishConfiguration := publishConfiguration.value.withOverwrite(true),
+    publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(true)
   )
   .jsSettings(
     scalaJSLinkerConfig ~= (_.withModuleKind(ModuleKind.CommonJSModule))
@@ -448,8 +453,11 @@ lazy val protocols = crossProject(JVMPlatform, JSPlatform, NativePlatform)
   .in(file("protocols"))
   .settings(
     name := "fs2-protocols",
-    tlVersionIntroduced := List("2.12", "2.13", "3").map(_ -> "3.2.0").toMap,
-    tlJdkRelease := Some(8)
+    tlVersionIntroduced := List("2.13", "3").map(_ -> "3.2.0").toMap,
+    tlJdkRelease := Some(8),
+    publishTo := githubPublishTo.value,
+    publishConfiguration := publishConfiguration.value.withOverwrite(true),
+    publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(true)
   )
   .jsSettings(
     scalaJSLinkerConfig ~= (_.withModuleKind(ModuleKind.CommonJSModule))
@@ -471,44 +479,3 @@ lazy val reactiveStreams = project
     Test / fork := true // Otherwise SubscriberStabilitySpec fails
   )
   .dependsOn(coreJVM % "compile->compile;test->test")
-
-lazy val unidocs = project
-  .in(file("unidocs"))
-  .enablePlugins(TypelevelUnidocPlugin)
-  .settings(
-    name := "fs2-docs",
-    tlJdkRelease := None,
-    tlFatalWarnings := false,
-    ScalaUnidoc / unidoc / unidocProjectFilter := inProjects(
-      core.jvm,
-      io.jvm,
-      scodec.jvm,
-      protocols.jvm,
-      reactiveStreams
-    )
-  )
-
-lazy val benchmark = project
-  .in(file("benchmark"))
-  .enablePlugins(JmhPlugin, NoPublishPlugin)
-  .settings(
-    name := "fs2-benchmark",
-    Test / run / javaOptions := (Test / run / javaOptions).value
-      .filterNot(o => o.startsWith("-Xmx") || o.startsWith("-Xms")) ++ Seq("-Xms256m", "-Xmx256m")
-  )
-  .dependsOn(io.jvm)
-
-lazy val microsite = project
-  .in(file("mdoc"))
-  .settings(
-    mdocIn := file("site"),
-    laikaSite := {
-      sbt.IO.copyDirectory(mdocOut.value, (laikaSite / target).value)
-      Set.empty
-    },
-    tlJdkRelease := None,
-    tlFatalWarnings := false,
-    tlSiteApiPackage := Some("fs2")
-  )
-  .dependsOn(coreJVM, io.jvm, reactiveStreams, scodec.jvm)
-  .enablePlugins(TypelevelSitePlugin)

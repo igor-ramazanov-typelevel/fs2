@@ -19,20 +19,53 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-package fs2
+package fs2.io.internal
 
-import scala.scalanative.libc.string._
+import cats.effect.kernel.Async
+import cats.effect.kernel.Resource
+import cats.effect.std.Mutex
+import cats.syntax.all._
+
+import scala.scalanative.libc.errno._
+import scala.scalanative.libc.stdlib._
+import scala.scalanative.posix.string._
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 
-private[fs2] trait ChunkRuntimePlatform[+O]
+private[io] final class ResizableBuffer[F[_]] private (
+    mutex: Mutex[F],
+    private var ptr: Ptr[Byte],
+    private[this] var size: Int
+)(implicit F: Async[F]) {
 
-private[fs2] trait ChunkCompanionRuntimePlatform {
-
-  def fromBytePtr(ptr: Ptr[Byte], length: Int): Chunk[Byte] = {
-    val bytes = new Array[Byte](length)
-    memcpy(bytes.atUnsafe(0), ptr, length.toCSize)
-    Chunk.ArraySlice(bytes, 0, length)
+  def get(size: Int): Resource[F, Ptr[Byte]] = mutex.lock.evalMap { _ =>
+    F.delay {
+      if (size <= this.size)
+        ptr
+      else {
+        ptr = realloc(ptr, size.toUInt)
+        this.size = size
+        if (ptr == null)
+          throw new RuntimeException(fromCString(strerror(errno)))
+        else ptr
+      }
+    }
   }
+
+}
+
+private[io] object ResizableBuffer {
+
+  def apply[F[_]](size: Int)(implicit F: Async[F]): Resource[F, ResizableBuffer[F]] =
+    Resource.make {
+      Mutex[F].flatMap { mutex =>
+        F.delay {
+          val ptr = malloc(size.toUInt)
+          if (ptr == null)
+            throw new RuntimeException(fromCString(strerror(errno)))
+          else new ResizableBuffer(mutex, ptr, size)
+        }
+      }
+    }(buf => F.delay(free(buf.ptr)))
 
 }

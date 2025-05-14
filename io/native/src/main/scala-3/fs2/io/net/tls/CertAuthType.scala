@@ -19,20 +19,11 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-package fs2
+package fs2.io.net.tls
 
-import scala.scalanative.libc.string._
-import scala.scalanative.unsafe._
-import scala.scalanative.unsigned._
-
-private[fs2] trait ChunkRuntimePlatform[+O]
-
-private[fs2] trait ChunkCompanionRuntimePlatform {
-
-  def fromBytePtr(ptr: Ptr[Byte], length: Int): Chunk[Byte] = {
-    val bytes = new Array[Byte](length)
-    memcpy(bytes.atUnsafe(0), ptr, length.toCSize)
-    Chunk.ArraySlice(bytes, 0, length)
-  }
-
+sealed abstract class CertAuthType
+object CertAuthType {
+  object None extends CertAuthType
+  object Required extends CertAuthType
+  object Optional extends CertAuthType
 }

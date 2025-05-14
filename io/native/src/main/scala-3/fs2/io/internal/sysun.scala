@@ -19,20 +19,30 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-package fs2
+package fs2.io.internal
 
-import scala.scalanative.libc.string._
+import scala.scalanative.posix.sys.socket._
 import scala.scalanative.unsafe._
-import scala.scalanative.unsigned._
 
-private[fs2] trait ChunkRuntimePlatform[+O]
+private[io] object sysun {
+  import Nat._
+  type _108 = Digit3[_1, _0, _8]
 
-private[fs2] trait ChunkCompanionRuntimePlatform {
+  type sockaddr_un = CStruct2[
+    sa_family_t,
+    CArray[CChar, _108]
+  ]
 
-  def fromBytePtr(ptr: Ptr[Byte], length: Int): Chunk[Byte] = {
-    val bytes = new Array[Byte](length)
-    memcpy(bytes.atUnsafe(0), ptr, length.toCSize)
-    Chunk.ArraySlice(bytes, 0, length)
+}
+
+private[io] object sysunOps {
+  import sysun._
+
+  implicit final class sockaddr_unOps(val sockaddr_un: Ptr[sockaddr_un]) extends AnyVal {
+    def sun_family: sa_family_t = sockaddr_un._1
+    def sun_family_=(sun_family: sa_family_t): Unit = sockaddr_un._1 = sun_family
+    def sun_path: CArray[CChar, _108] = sockaddr_un._2
+    def sun_path_=(sun_path: CArray[CChar, _108]): Unit = sockaddr_un._2 = sun_path
   }
 
 }

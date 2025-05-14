@@ -19,20 +19,13 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-package fs2
+package fs2.io
+package net.tls
 
-import scala.scalanative.libc.string._
 import scala.scalanative.unsafe._
-import scala.scalanative.unsigned._
 
-private[fs2] trait ChunkRuntimePlatform[+O]
+class SSLException(message: String = null, cause: Throwable = null)
+    extends IOException(message, cause)
 
-private[fs2] trait ChunkCompanionRuntimePlatform {
-
-  def fromBytePtr(ptr: Ptr[Byte], length: Int): Chunk[Byte] = {
-    val bytes = new Array[Byte](length)
-    memcpy(bytes.atUnsafe(0), ptr, length.toCSize)
-    Chunk.ArraySlice(bytes, 0, length)
-  }
-
-}
+private[tls] final class S2nException(error: CInt)
+    extends SSLException(fromCString(s2n.s2n_strerror(error, c"EN")))
